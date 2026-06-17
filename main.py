@@ -19,6 +19,16 @@ for year in range(2024, 2025):
             session = fastf1.get_session(year, round_num, 'R')
             session.load()
             results = session.results[['Abbreviation', 'GridPosition', 'Position', 'Status', 'Time']].copy()
+
+            weather = session.weather_data
+            avg_track_temp = weather['TrackTemp'].mean()
+            avg_air_temp = weather['AirTemp'].mean()
+            rain_occurred = int(weather['Rainfall'].any())
+            results['TrackTemp'] = avg_track_temp
+            results['AirTemp'] = avg_air_temp
+            results['IsRain'] = rain_occurred
+
+
             winner_time = results.iloc[0]["Time"].total_seconds()
             results['TotalTime_sec'] = np.nan
             for index, row in results.iterrows():
@@ -40,7 +50,7 @@ if all_races_data:
     final_df.dropna(subset=['Time_Ratio'], inplace=True)
     final_df = pd.get_dummies(final_df, columns=['Location'], dtype=int)
     circuit_columns = [col for col in final_df.columns if col.startswith('Location_')]
-    final_features = ['GridPosition', 'Time_Ratio'] + circuit_columns
+    final_features = ['GridPosition', 'TrackTemp', 'AirTemp', 'IsRain', 'Time_Ratio'] + circuit_columns
     matrix_ready_df = final_df[final_features]
     matrix_ready_df.to_csv('f1_matrix_data.csv', index=False)
     print("\nDataset úspěšně vyčištěn a uložen do 'f1_matrix_data.csv'!")
