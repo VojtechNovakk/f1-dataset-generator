@@ -18,7 +18,8 @@ for year in range(2024, 2025):
         try:
             session = fastf1.get_session(year, round_num, 'R')
             session.load()
-            results = session.results[['Abbreviation', 'GridPosition', 'Position', 'Status', 'Time']].copy()
+            results = session.results[
+                ['Abbreviation', 'TeamName', 'GridPosition', 'Position', 'Status', 'Time', 'Points']].copy()
 
             weather = session.weather_data
             avg_track_temp = weather['TrackTemp'].mean()
@@ -40,6 +41,7 @@ for year in range(2024, 2025):
                         results.at[index, 'TotalTime_sec'] = winner_time + gap_sec
             results['Time_Ratio'] = results['TotalTime_sec'] / winner_time
             results['Year'] = year
+            results['RoundNumber'] = round_num
             results['Location'] = location
             all_races_data.append(results)
         except Exception as e:
@@ -47,10 +49,27 @@ for year in range(2024, 2025):
 
 if all_races_data:
     final_df = pd.concat(all_races_data, ignore_index=True)
-    final_df.dropna(subset=['Time_Ratio'], inplace=True)
+
+    final_df.sort_values(by=['Year', 'RoundNumber'], inplace=True)
+    final_df['Driver_Form_5Races'] = (
+        final_df.groupby('Abbreviation')['Position']
+        .transform(lambda x: x.shift(1).rolling(window=5, min_periods=1).mean())
+    )
+    team_race_points = final_df.groupby(['TeamName', 'Year', 'RoundNumber'])['Points'].sum().reset_index()
+    team_race_points.sort_values(by=['Year', 'RoundNumber'], inplace=True)
+    team_race_points['Team_Form_5Races'] = (
+        team_race_points.groupby('TeamName')['Points']
+        .transform(lambda x: x.shift(1).rolling(window=5, min_periods=1).sum())
+    )
+    final_df = final_df.merge(
+        team_race_points[['TeamName', 'Year', 'RoundNumber', 'Team_Form_5Races']],
+        on=['TeamName', 'Year', 'RoundNumber'],
+        how='left'
+    )
+    final_df.dropna(subset=['Time_Ratio', 'Driver_Form_5Races'], inplace=True)
     final_df = pd.get_dummies(final_df, columns=['Location'], dtype=int)
     circuit_columns = [col for col in final_df.columns if col.startswith('Location_')]
-    final_features = ['GridPosition', 'TrackTemp', 'AirTemp', 'IsRain', 'Time_Ratio'] + circuit_columns
+    final_features = ['GridPosition', 'TrackTemp', 'AirTemp', 'IsRain', 'Time_Ratio', 'Driver_Form_5Races', 'Team_Form_5Races'] + circuit_columns
     matrix_ready_df = final_df[final_features]
     matrix_ready_df.to_csv('f1_matrix_data.csv', index=False)
     print("\nDataset úspěšně vyčištěn a uložen do 'f1_matrix_data.csv'!")
